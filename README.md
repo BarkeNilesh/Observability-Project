@@ -13,6 +13,10 @@ Open in browser (Chrome/Edge): http://<SERVER-PUBLIC-IP>:3000
 Default credentials:   Username: admin
                        Password: admin
 
+Step 3: Add Prometheus as a Data Source
+In Grafana -> Connections -> Add data source -> Select Prometheus -> For URL enter: http://<PROMETHEUS-PUBLIC-IP>:9090 -> Save & Test
+Expected: Successfully queried the Prometheus API
+
 
 
 
