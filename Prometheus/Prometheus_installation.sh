@@ -5,18 +5,25 @@ set -e
 PROM_VERSION="3.5.0"
 
 echo "Creating Prometheus user..."
-id prometheus &>/dev/null || useradd --no-create-home --shell /bin/false prometheus
+
+if ! id prometheus >/dev/null 2>&1; then
+	sudo useradd --no-create-home --shell /bin/false prometheus
+fi
 
 echo "Creating directories..."
-mkdir -p /etc/prometheus
-mkdir -p /var/lib/prometheus
+sudo mkdir -p /etc/prometheus
+sudo mkdir -p /var/lib/prometheus
 
 echo "Downloading Prometheus..."
 cd /tmp
+
+rm -rf prometheus-${PROM_VERSION}.linux-amd64*
+
 wget https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz
 
 echo "Extracting package..."
 tar -xzf prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+
 cd prometheus-${PROM_VERSION}.linux-amd64
 
 echo "Installing binaries..."
@@ -25,8 +32,6 @@ cp promtool /usr/local/bin/
 
 echo "Installing configuration..."
 cp prometheus.yml /etc/prometheus/
-#cp -r consoles /etc/prometheus/
-#cp -r console_libraries /etc/prometheus/
 
 echo "Setting permissions..."
 chown prometheus:prometheus /usr/local/bin/prometheus
@@ -34,12 +39,16 @@ chown prometheus:prometheus /usr/local/bin/promtool
 chown -R prometheus:prometheus /etc/prometheus
 chown -R prometheus:prometheus /var/lib/prometheus
 
+chmod -R 755 /usr/local/bin/prometheus
+chmod -R 755 /usr/local/bin/promtool
+
 echo "Creating systemd service..."
 
-cat <<EOF > /etc/systemd/system/prometheus.service
+cat > /etc/systemd/system/prometheus.service <<EOF
 [Unit]
 Description=Prometheus Monitoring Server
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 User=prometheus
@@ -48,11 +57,11 @@ Type=simple
 
 ExecStart=/usr/local/bin/prometheus \
  --config.file=/etc/prometheus/prometheus.yml \
- --storage.tsdb.path=/var/lib/prometheus \
-# --web.console.templates=/etc/prometheus/consoles \
-# --web.console.libraries=/etc/prometheus/console_libraries
+ --storage.tsdb.path=/var/lib/prometheus
+ --storage.tsdb.retention.time=15d
 
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -61,15 +70,29 @@ EOF
 echo "Reloading systemd..."
 systemctl daemon-reload
 
+echo "Validating configuration..."
+/usr/local/bin/promtool check config /etc/prometheus/prometheus.yml
+
 echo "Enabling Prometheus..."
 systemctl enable prometheus
 
 echo "Starting Prometheus..."
-systemctl start prometheus
+systemctl restart prometheus
+
+echo "Waiting for service startup..."
+sleep 5
 
 echo "Checking status..."
-systemctl status prometheus --no-pager
+systemctl --no-pager --full status prometheus
 
-echo ""
-echo "Prometheus installation completed."
-echo "Access URL: http://$(hostname -I | awk '{print $1}'):9090"
+echo
+echo "Listening Port Check:"
+ss -tulnp | grep 9090 || true
+
+SERVER_IP=$(hostname -I | awk '{print $1}')
+
+echo
+echo "====================================================="
+echo "Prometheus installation completed successfully."
+echo "Access URL: http://${SERVER_IP}:9090"
+echo "====================================================="
